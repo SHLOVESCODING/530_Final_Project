@@ -1,0 +1,102 @@
+---
+title: "530_Final_Project"
+author: "Hang Su"
+date: "7/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(corrplot)
+library(kernlab)
+library(caret)
+library(pROC)
+```
+
+Loading and Pre-pocessing of the data data
+
+```{r}
+data = as.data.frame(read_csv("C:/Users/Administrator/Desktop/Lab/530_Final_Project/530_Final_Project/Absenteeism_at_work_train.csv"))
+str(data)
+sum(is.na(data))
+data = na.omit(data)
+colnames(data) = gsub(" ", "_", colnames(data))
+data$Age = as.numeric(data$Age)
+data$Reason_for_absence = as.factor(data$Reason_for_absence)
+data$Seasons = as.factor(data$Seasons)
+data$Disciplinary_failure = as.factor(data$Disciplinary_failure)
+data$Social_drinker = as.factor(data$Social_drinker)
+data$Social_smoker = as.factor(data$Social_smoker)
+data$Month_of_absence = as.factor(data$Month_of_absence)
+data$Day_of_the_week = as.factor(data$Day_of_the_week)
+sum(is.na(data))
+data = na.omit(data)
+data[data$Absenteeism_time_in_hours == 0, 22] = 0
+data[which(data$Absenteeism_time_in_hours > 0 & data$Absenteeism_time_in_hours <= 6) , 22] = 1
+data[data$Absenteeism_time_in_hours > 6, 22] = 2
+colnames(data)[22] = c("Classifier")
+data$Classifier = as.factor(data$Classifier)
+data_reg = data[, -22]
+data_svm = data[, -21]
+str(data_reg)
+```
+
+In the pre-pocessing sector, we converted Reason for absence, Seasons, Month of absence, Day of the week, Disciplinary failure, Social drinker and Social smoker from numeric variables to factor variables. As for the Education variable, it is, in essence, a ordinal variable. To build a model without hassels, we just treat it as numeric one.
+
+We also built a dataset for classifier, the support vector machine. We break the dependent variable into three sub groups. Group 0: Number of hours = 0. Group 1: 0 < Number of hours <= 6. Group 2: Number of hours > 6.
+
+The next step is doing Exploratory data anlysis and features engineering to reduce the collinearity among predictors and reduce the dimension of the data.
+```{r}
+corrplot(cor(data[,-c(1,2,3,4,5,12,15,16,21,22)]), tl.col = 'black', tl.cex = .75)
+plot(density(data[,21]))
+data_sc = as.data.frame(scale(data[, -c(1,2,3,4,5,12,15,16,21,22)]))
+data_sc = round(data_sc, 4)
+sum(is.na(data_sc))
+fac = factanal(data_sc,factors = 5, rotation = "none", na.action = na.omit)
+fac$loadings
+```
+From the heat map, we can see that there is no extreme strong correlation among predicting variables. However, we shall run a regression model to see if this assumption holds.
+
+Also, from the factor analysis, we found that the underlying factors did a poor job (5 factors only account for less than 60% variance) to account for the shared variances, which means the shared variance among variables are too little to choose underlying factors over oringial variables. So we stick to oringinal variables.
+
+The regression model
+
+The SVM model with linear kernel
+```{r}
+data_svm_rand = data_svm[sample(1:nrow(data_svm)),]
+data_svm_train = data_svm_rand[1:(as.integer(0.8*nrow(data_svm_rand))-1), ]
+data_svm_test = data_svm_rand[(as.integer(0.8*nrow(data_svm_rand))):nrow(data_svm_rand), ]
+linear = ksvm(Classifier~., data =data_svm_train, kernel = "vanilladot")
+linear_pred = predict(linear, data_svm_test)
+accuracy_linear = sum(diag(table(linear_pred, data_svm_test$Classifier)))/sum(table(linear_pred, data_svm_test$Classifier))
+accuracy_linear
+```
+
+The SVM model with poly kernel
+```{r}
+poly = ksvm(Classifier~., data =data_svm_train, kernel = "polydot")
+poly_pred = predict(poly, data_svm_test)
+accuracy_poly = sum(diag(table(poly_pred, data_svm_test$Classifier)))/sum(table(poly_pred, data_svm_test$Classifier))
+accuracy_poly
+```
+
+The SVM model with RBF kernel
+```{r}
+RBF = ksvm(Classifier~., data =data_svm_train, kernel = "rbfdot")
+RBF_pred = predict(RBF, data_svm_test)
+accuracy_RBF = sum(diag(table(RBF_pred, data_svm_test$Classifier)))/sum(table(RBF_pred, data_svm_test$Classifier))
+accuracy_RBF
+```
+
+
+Model evaluation
+```{r}
+ROC_linear = multiclass.roc(data_svm_test$Classifier, as.numeric(linear_pred))
+ROC_poly = multiclass.roc(data_svm_test$Classifier, as.numeric(poly_pred))
+ROC_RBF = multiclass.roc(data_svm_test$Classifier, as.numeric(RBF_pred))
+ROC_linear$auc
+ROC_poly$auc
+ROC_RBF$auc
+```
+
+
